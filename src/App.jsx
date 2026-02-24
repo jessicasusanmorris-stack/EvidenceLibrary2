@@ -5,6 +5,7 @@ import LibraryPage from './pages/LibraryPage';
 import BundleBuilderPage from './pages/BundleBuilderPage';
 import {
   getFileType,
+  formatFileSize,
   generateEvNumber,
   computeHash,
   createPreviewUrl,
@@ -28,51 +29,48 @@ export default function App() {
     if (!files.length) return;
     e.target.value = '';
 
-    const newItems = await Promise.all(
-      files.map(async (file) => {
-        const id = generateId();
-        const evNumber = generateEvNumber(evCounterRef.current++, MATTER.number);
-        const fileType = getFileType(file);
-        const previewUrl = createPreviewUrl(file);
+    const newItems = files.map((file) => {
+      const id = generateId();
+      const evNumber = generateEvNumber(evCounterRef.current++, MATTER.number);
+      const fileType = getFileType(file);
+      const previewUrl = createPreviewUrl(file);
 
-        // Start hash computation — update item when done
-        const hashPromise = computeHash(file);
+      const item = {
+        id,
+        evNumber,
+        name: file.name,
+        file,
+        fileType,
+        previewUrl,
+        size: file.size,
+        fileSize: formatFileSize(file.size),
+        uploadedAt: new Date().toISOString(),
+        hash: null,
+        hashStatus: 'computing',
+        checked: false,
+        isFavourite: false,
+        auditTrail: [
+          { action: 'Uploaded', timestamp: new Date().toISOString(), user: USER.name },
+        ],
+      };
 
-        const item = {
-          id,
-          evNumber,
-          name: file.name,
-          file,
-          fileType,
-          previewUrl,
-          size: file.size,
-          uploadedAt: new Date().toISOString(),
-          hash: null,
-          hashPending: true,
-          checked: false,
-          favourite: false,
-        };
+      // Compute hash asynchronously and update item when done
+      computeHash(file).then((hash) => {
+        setEvidenceItems((prev) =>
+          prev.map((it) =>
+            it.id === id
+              ? { ...it, hash, hashStatus: hash ? 'verified' : 'error' }
+              : it
+          )
+        );
+      });
 
-        // Resolve hash and update state asynchronously
-        hashPromise.then((hash) => {
-          setEvidenceItems((prev) =>
-            prev.map((it) => (it.id === id ? { ...it, hash, hashPending: false } : it))
-          );
-        });
-
-        return item;
-      })
-    );
-
-    setEvidenceItems((prev) => {
-      const updated = [...prev, ...newItems];
-      // Auto-select first uploaded item if none selected
-      if (!selectedEvidenceId && newItems.length > 0) {
-        setSelectedEvidenceId(newItems[0].id);
-      }
-      return updated;
+      return item;
     });
-  }, [selectedEvidenceId]);
+
+    setEvidenceItems((prev) => [...prev, ...newItems]);
+    setSelectedEvidenceId((prev) => prev ?? newItems[0]?.id ?? null);
+  }, []);
 
   // ── Library interactions ─────────────────────────────────────────────────────
   const handleToggleCheck = useCallback((id) => {
@@ -83,7 +81,7 @@ export default function App() {
 
   const handleToggleFavourite = useCallback((id) => {
     setEvidenceItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, favourite: !it.favourite } : it))
+      prev.map((it) => (it.id === id ? { ...it, isFavourite: !it.isFavourite } : it))
     );
   }, []);
 
@@ -101,21 +99,13 @@ export default function App() {
       name: bundleName || `Bundle ${bundles.length + 1}`,
       itemIds: checkedIds,
       authorisedBy: [],
-      settings: {
-        showIndex: true,
-        showCertification: false,
-        showProvenance: false,
-      },
+      settings: { showIndex: true, showCertification: false, showProvenance: false },
       createdAt: new Date().toISOString(),
     };
 
     setBundles((prev) => [...prev, newBundle]);
     setSelectedBundleId(newBundle.id);
-
-    // Uncheck all items
     setEvidenceItems((prev) => prev.map((it) => ({ ...it, checked: false })));
-
-    // Navigate to bundle builder
     setActivePage('bundle-builder');
   }, [evidenceItems, bundles.length]);
 
@@ -126,11 +116,7 @@ export default function App() {
       name: `Bundle ${bundles.length + 1}`,
       itemIds: [],
       authorisedBy: [],
-      settings: {
-        showIndex: true,
-        showCertification: false,
-        showProvenance: false,
-      },
+      settings: { showIndex: true, showCertification: false, showProvenance: false },
       createdAt: new Date().toISOString(),
     };
     setBundles((prev) => [...prev, newBundle]);
@@ -151,17 +137,19 @@ export default function App() {
     );
   }, []);
 
-  const handleUpdateBundleName = useCallback((bundleId, name) => {
+  // BundleBuilderPage calls onUpdateName(bundleId, name)
+  const handleUpdateName = useCallback((bundleId, name) => {
     setBundles((prev) =>
       prev.map((b) => (b.id === bundleId ? { ...b, name } : b))
     );
   }, []);
 
-  const handleUpdateSettings = useCallback((bundleId, key, value) => {
+  // BundleBuilderPage calls onUpdateSettings(bundleId, { key: value })
+  const handleUpdateSettings = useCallback((bundleId, settingsObj) => {
     setBundles((prev) =>
       prev.map((b) =>
         b.id === bundleId
-          ? { ...b, settings: { ...b.settings, [key]: value } }
+          ? { ...b, settings: { ...b.settings, ...settingsObj } }
           : b
       )
     );
@@ -176,20 +164,21 @@ export default function App() {
   const handleDeleteBundle = useCallback((bundleId) => {
     setBundles((prev) => {
       const next = prev.filter((b) => b.id !== bundleId);
-      if (selectedBundleId === bundleId) {
-        setSelectedBundleId(next.length > 0 ? next[next.length - 1].id : null);
-      }
+      setSelectedBundleId(next.length > 0 ? next[next.length - 1].id : null);
       return next;
     });
-  }, [selectedBundleId]);
+  }, []);
 
   // ── Render ───────────────────────────────────────────────────────────────────
+  const checkedIds = new Set(evidenceItems.filter((it) => it.checked).map((it) => it.id));
+
   const renderPage = () => {
     switch (activePage) {
       case 'library':
         return (
           <LibraryPage
             evidenceItems={evidenceItems}
+            checkedIds={checkedIds}
             selectedEvidenceId={selectedEvidenceId}
             onSelectEvidence={handleSelectEvidence}
             onToggleCheck={handleToggleCheck}
@@ -206,7 +195,7 @@ export default function App() {
             onSelectBundle={handleSelectBundle}
             onCreateBundle={handleCreateBundle}
             onRemoveFromBundle={handleRemoveFromBundle}
-            onUpdateBundleName={handleUpdateBundleName}
+            onUpdateName={handleUpdateName}
             onUpdateSettings={handleUpdateSettings}
             onUpdateAuthorisedBy={handleUpdateAuthorisedBy}
             onDeleteBundle={handleDeleteBundle}
@@ -235,11 +224,7 @@ export default function App() {
         user={USER}
       />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Header
-          matter={MATTER}
-          user={USER}
-          onUpload={handleUpload}
-        />
+        <Header matter={MATTER} user={USER} onUpload={handleUpload} />
         <div className="flex-1 overflow-hidden flex">
           {renderPage()}
         </div>
