@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  Search, Star, FileText, ImageIcon, File,
-  CheckCircle, Loader2, Plus, X, Download,
-  Eye, Trash2, ChevronDown,
+  Search, Star, FileText, ImageIcon, File, FileSpreadsheet,
+  CheckCircle, Loader2, Plus, X, Download, Eye, Trash2,
+  ChevronDown, ArrowLeft, AlertCircle,
 } from 'lucide-react';
 import { generateBundlePDF } from '../utils/bundleUtils.js';
 
 const TAB_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── File type icon ────────────────────────────────────────────────────────────
 
 function FileTypeIcon({ fileType, size = 15 }) {
   if (fileType === 'image')
@@ -17,8 +17,12 @@ function FileTypeIcon({ fileType, size = 15 }) {
     return <FileText className="text-red-400" style={{ width: size, height: size }} />;
   if (fileType === 'document')
     return <FileText className="text-blue-400" style={{ width: size, height: size }} />;
+  if (fileType === 'spreadsheet')
+    return <FileSpreadsheet className="text-green-500" style={{ width: size, height: size }} />;
   return <File className="text-[#858585]" style={{ width: size, height: size }} />;
 }
+
+// ── Toggle ────────────────────────────────────────────────────────────────────
 
 function Toggle({ value, onChange }) {
   return (
@@ -29,16 +33,166 @@ function Toggle({ value, onChange }) {
     >
       <div
         className="absolute top-0.5 bg-white rounded-full shadow transition-transform"
-        style={{
-          width: 14, height: 14,
-          transform: value ? 'translateX(16px)' : 'translateX(2px)',
-        }}
+        style={{ width: 14, height: 14, transform: value ? 'translateX(16px)' : 'translateX(2px)' }}
       />
     </button>
   );
 }
 
-function BundlePreview({ bundle, items }) {
+// ── Document preview ──────────────────────────────────────────────────────────
+
+function DocumentPreview({ item, onClose }) {
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [docHtml, setDocHtml] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!item) return;
+
+    setPdfUrl(null);
+    setDocHtml(null);
+    setError(null);
+    setLoading(false);
+
+    let cancelled = false;
+    let revokeUrl = null;
+
+    if (item.fileType === 'pdf') {
+      const url = URL.createObjectURL(item.file);
+      revokeUrl = url;
+      setPdfUrl(url);
+    }
+
+    if (item.fileType === 'document') {
+      const ext = item.name.split('.').pop().toLowerCase();
+      if (ext === 'docx') {
+        setLoading(true);
+        (async () => {
+          try {
+            const mammoth = (await import('mammoth')).default;
+            const buffer = await item.file.arrayBuffer();
+            const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+            if (!cancelled) {
+              setDocHtml(result.value);
+              setLoading(false);
+            }
+          } catch {
+            if (!cancelled) {
+              setError('Could not render this document.');
+              setLoading(false);
+            }
+          }
+        })();
+      }
+    }
+
+    return () => {
+      cancelled = true;
+      if (revokeUrl) URL.revokeObjectURL(revokeUrl);
+    };
+  }, [item?.id]);
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-2.5 border-b border-[#dde1e7] bg-white flex items-center gap-3 flex-shrink-0">
+        <button
+          onClick={onClose}
+          className="text-[#858585] hover:text-[#252627] transition-colors flex-shrink-0"
+          title="Back to bundle preview"
+        >
+          <ArrowLeft style={{ width: 14, height: 14 }} />
+        </button>
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <FileTypeIcon fileType={item.fileType} size={13} />
+          <span className="font-semibold text-[#252627] truncate" style={{ fontSize: 11 }}>
+            {item.name}
+          </span>
+        </div>
+        <span
+          className="px-1.5 py-0.5 text-white font-black rounded flex-shrink-0"
+          style={{ fontSize: 8, backgroundColor: '#1E365E' }}
+        >
+          {item.evNumber}
+        </span>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-hidden relative">
+        {/* Image */}
+        {item.fileType === 'image' && item.previewUrl && (
+          <div className="flex items-center justify-center h-full bg-[#2a2a2a] p-4">
+            <img
+              src={item.previewUrl}
+              alt={item.name}
+              className="max-w-full max-h-full object-contain rounded shadow-xl"
+            />
+          </div>
+        )}
+
+        {/* PDF */}
+        {item.fileType === 'pdf' && pdfUrl && (
+          <iframe
+            src={pdfUrl}
+            title={item.name}
+            className="w-full h-full border-none"
+          />
+        )}
+
+        {/* Word doc rendered as HTML */}
+        {item.fileType === 'document' && docHtml && (
+          <div className="h-full overflow-y-auto bg-white">
+            <div
+              className="max-w-2xl mx-auto p-8"
+              style={{ fontSize: 13, lineHeight: 1.7, color: '#252627' }}
+              dangerouslySetInnerHTML={{ __html: docHtml }}
+            />
+          </div>
+        )}
+
+        {/* Loading */}
+        {loading && (
+          <div className="flex flex-col items-center justify-center h-full text-[#858585]">
+            <Loader2 className="animate-spin mb-3" style={{ width: 28, height: 28 }} />
+            <p style={{ fontSize: 12 }}>Rendering document...</p>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && !loading && (
+          <div className="flex flex-col items-center justify-center h-full text-[#858585] px-8">
+            <AlertCircle style={{ width: 32, height: 32 }} className="mb-3 opacity-40" />
+            <p className="font-semibold text-center" style={{ fontSize: 12 }}>{error}</p>
+          </div>
+        )}
+
+        {/* Unsupported / no preview available */}
+        {!item.previewUrl &&
+          item.fileType !== 'pdf' &&
+          !docHtml &&
+          !loading &&
+          !error && (
+            <div className="flex flex-col items-center justify-center h-full text-[#858585]">
+              <FileTypeIcon fileType={item.fileType} size={52} />
+              <p className="mt-4 font-semibold" style={{ fontSize: 13 }}>{item.name}</p>
+              <p className="mt-1" style={{ fontSize: 11 }}>Preview not available for this file type</p>
+              <div
+                className="mt-3 px-3 py-1.5 bg-[#f6f6f6] border border-[#dde1e7] rounded text-center"
+                style={{ fontSize: 10 }}
+              >
+                {item.evNumber} · {item.fileSize} · {item.fileType.toUpperCase()}
+              </div>
+            </div>
+          )}
+      </div>
+    </div>
+  );
+}
+
+// ── Bundle preview ────────────────────────────────────────────────────────────
+
+function BundleIndexPreview({ bundle, items }) {
   if (!bundle) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-[#858585]">
@@ -83,7 +237,6 @@ function BundlePreview({ bundle, items }) {
         </div>
 
         <div style={{ padding: '22px 26px 28px' }}>
-          {/* Index title */}
           <div className="text-center" style={{ marginBottom: 16 }}>
             <h1
               className="font-bold text-[#1E365E]"
@@ -97,7 +250,6 @@ function BundlePreview({ bundle, items }) {
             </p>
           </div>
 
-          {/* Table */}
           <table className="w-full" style={{ borderCollapse: 'collapse', fontSize: 8.5 }}>
             <thead>
               <tr style={{ backgroundColor: '#1E365E', color: 'white' }}>
@@ -112,7 +264,7 @@ function BundlePreview({ bundle, items }) {
                   <td style={{ padding: '4px 7px', fontWeight: 'bold', color: '#1E365E', textAlign: 'center' }}>
                     {TAB_LETTERS[i] || i + 1}
                   </td>
-                  <td style={{ padding: '4px 7px', color: '#252627', overflow: 'hidden' }}>
+                  <td style={{ padding: '4px 7px', color: '#252627' }}>
                     <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>
                       {item.name.replace(/\.[^/.]+$/, '')}
                     </div>
@@ -125,7 +277,6 @@ function BundlePreview({ bundle, items }) {
             </tbody>
           </table>
 
-          {/* Certification */}
           {bundle.settings?.showCertification && bundle.authorisedBy?.length > 0 && (
             <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid #dde1e7' }}>
               <p className="text-[#58595b] italic" style={{ fontSize: 8, marginBottom: 10 }}>
@@ -167,6 +318,7 @@ export default function CombinedPage({
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState(null);
 
   const activeBundle = bundles.find((b) => b.id === activeBundleId) || null;
   const checkedIds = new Set(activeBundle?.itemIds || []);
@@ -174,13 +326,12 @@ export default function CombinedPage({
     ? activeBundle.itemIds.map((id) => evidenceItems.find((e) => e.id === id)).filter(Boolean)
     : [];
 
-  // Filter library items
+  const selectedItem = evidenceItems.find((e) => e.id === selectedItemId) || null;
+
   const q = search.trim().toLowerCase();
   const filtered = q
     ? evidenceItems.filter(
-        (i) =>
-          i.name.toLowerCase().includes(q) ||
-          i.evNumber.toLowerCase().includes(q)
+        (i) => i.name.toLowerCase().includes(q) || i.evNumber.toLowerCase().includes(q)
       )
     : evidenceItems;
 
@@ -214,20 +365,29 @@ export default function CombinedPage({
   };
 
   const renderLibraryItem = (item) => {
-    const isChecked = checkedIds.has(item.id);
+    const isInBundle = checkedIds.has(item.id);
+    const isSelected = selectedItemId === item.id;
+
     return (
       <div
         key={item.id}
-        onClick={() => onToggleItem(item.id)}
+        onClick={() => setSelectedItemId(item.id)}
         className={`flex items-start gap-2 p-2 rounded cursor-pointer transition-all border ${
-          isChecked
-            ? 'bg-[#e6eff6] border-[#b8d4e8]'
+          isSelected
+            ? 'bg-[#f0f5fa] border-[#1E365E]'
             : 'bg-white border-transparent hover:bg-[#f6f6f6] hover:border-[#e9ebef]'
         }`}
       >
-        {/* Custom checkbox */}
-        <div className="flex-shrink-0 mt-0.5">
-          {isChecked ? (
+        {/* Checkbox — clicking this toggles bundle membership */}
+        <div
+          className="flex-shrink-0 mt-0.5"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleItem(item.id);
+          }}
+          title={isInBundle ? 'Remove from bundle' : 'Add to bundle'}
+        >
+          {isInBundle ? (
             <div
               className="rounded-sm flex items-center justify-center"
               style={{ width: 14, height: 14, backgroundColor: '#1E365E' }}
@@ -243,10 +403,7 @@ export default function CombinedPage({
               </svg>
             </div>
           ) : (
-            <div
-              className="rounded-sm border-2 border-[#c0c7d1]"
-              style={{ width: 14, height: 14 }}
-            />
+            <div className="rounded-sm border-2 border-[#c0c7d1]" style={{ width: 14, height: 14 }} />
           )}
         </div>
 
@@ -276,10 +433,7 @@ export default function CombinedPage({
                 <CheckCircle className="text-[#0d630d]" style={{ width: 11, height: 11 }} />
               )}
               {item.hashStatus === 'computing' && (
-                <Loader2
-                  className="text-[#858585] animate-spin"
-                  style={{ width: 11, height: 11 }}
-                />
+                <Loader2 className="text-[#858585] animate-spin" style={{ width: 11, height: 11 }} />
               )}
               <button
                 onClick={(e) => {
@@ -318,7 +472,6 @@ export default function CombinedPage({
         className="flex flex-col border-r border-[#dde1e7] bg-white overflow-hidden flex-shrink-0"
         style={{ width: 280 }}
       >
-        {/* Header */}
         <div className="px-3 py-2.5 border-b border-[#dde1e7] flex items-center justify-between flex-shrink-0">
           <span className="font-black text-[#252627] uppercase tracking-wider" style={{ fontSize: 10 }}>
             Library
@@ -328,7 +481,6 @@ export default function CombinedPage({
           </span>
         </div>
 
-        {/* Search */}
         <div className="p-2 border-b border-[#dde1e7] flex-shrink-0">
           <div className="relative">
             <Search
@@ -346,7 +498,6 @@ export default function CombinedPage({
           </div>
         </div>
 
-        {/* Item list */}
         <div className="flex-1 overflow-y-auto p-2 space-y-3">
           {evidenceItems.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-[#858585]">
@@ -383,7 +534,6 @@ export default function CombinedPage({
           )}
         </div>
 
-        {/* Selected count footer */}
         {checkedIds.size > 0 && (
           <div className="px-3 py-2 border-t border-[#dde1e7] bg-[#e6eff6] flex-shrink-0">
             <p className="font-black text-[#1E365E]" style={{ fontSize: 10 }}>
@@ -413,28 +563,17 @@ export default function CombinedPage({
 
             {showDropdown && (
               <>
-                {/* Click-outside overlay */}
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setShowDropdown(false)}
-                />
+                <div className="fixed inset-0 z-10" onClick={() => setShowDropdown(false)} />
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#dde1e7] rounded shadow-lg z-20 overflow-hidden">
                   {bundles.length === 0 && (
-                    <p className="px-3 py-2 text-[#858585]" style={{ fontSize: 11 }}>
-                      No bundles yet
-                    </p>
+                    <p className="px-3 py-2 text-[#858585]" style={{ fontSize: 11 }}>No bundles yet</p>
                   )}
                   {bundles.map((b) => (
                     <button
                       key={b.id}
-                      onClick={() => {
-                        onSelectBundle(b.id);
-                        setShowDropdown(false);
-                      }}
+                      onClick={() => { onSelectBundle(b.id); setShowDropdown(false); }}
                       className={`w-full text-left px-3 py-2 transition-colors hover:bg-[#f6f6f6] ${
-                        b.id === activeBundleId
-                          ? 'font-black text-[#1E365E]'
-                          : 'text-[#252627]'
+                        b.id === activeBundleId ? 'font-black text-[#1E365E]' : 'text-[#252627]'
                       }`}
                       style={{ fontSize: 11 }}
                     >
@@ -468,7 +607,7 @@ export default function CombinedPage({
           </div>
         ) : (
           <>
-            {/* Bundle name row */}
+            {/* Bundle name */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-[#dde1e7] flex-shrink-0">
               {editingName ? (
                 <input
@@ -482,10 +621,7 @@ export default function CombinedPage({
                 />
               ) : (
                 <button
-                  onClick={() => {
-                    setEditingName(true);
-                    setNameInput(activeBundle.name);
-                  }}
+                  onClick={() => { setEditingName(true); setNameInput(activeBundle.name); }}
                   className="flex-1 text-left font-semibold text-[#252627] hover:text-[#0060a9] transition-colors truncate"
                   style={{ fontSize: 11 }}
                   title="Click to rename"
@@ -501,7 +637,6 @@ export default function CombinedPage({
               </button>
             </div>
 
-            {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto">
               {/* Bundle items */}
               <div className="p-2 space-y-1">
@@ -511,7 +646,12 @@ export default function CombinedPage({
                   </p>
                 ) : (
                   bundleItems.map((item, i) => (
-                    <div key={item.id} className="flex items-center gap-2 p-2 bg-[#f6f6f6] rounded group">
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2 p-2 bg-[#f6f6f6] rounded group cursor-pointer hover:bg-[#eef3f8] transition-colors"
+                      onClick={() => setSelectedItemId(item.id)}
+                      title="Click to preview"
+                    >
                       <div
                         className="text-white font-black rounded flex items-center justify-center flex-shrink-0"
                         style={{ width: 18, height: 18, fontSize: 8, backgroundColor: '#1E365E' }}
@@ -525,7 +665,7 @@ export default function CombinedPage({
                         <div className="text-[#858585]" style={{ fontSize: 9 }}>{item.evNumber}</div>
                       </div>
                       <button
-                        onClick={() => onToggleItem(item.id)}
+                        onClick={(e) => { e.stopPropagation(); onToggleItem(item.id); }}
                         className="opacity-0 group-hover:opacity-100 text-[#858585] hover:text-[#9e0c19] transition-all flex-shrink-0"
                         title="Remove"
                       >
@@ -559,7 +699,6 @@ export default function CombinedPage({
                   ))}
                 </div>
 
-                {/* Authorised By */}
                 <div className="border-t border-[#dde1e7] pt-2.5 mt-3 mb-2">
                   <span className="font-black text-[#252627] uppercase tracking-wider" style={{ fontSize: 9 }}>
                     Authorised By
@@ -604,16 +743,16 @@ export default function CombinedPage({
               </div>
             </div>
 
-            {/* Download */}
             <div className="p-3 border-t border-[#dde1e7] flex-shrink-0">
               <button
                 onClick={handleDownload}
                 disabled={bundleItems.length === 0 || downloading}
-                className="w-full flex items-center justify-center gap-2 text-white font-black rounded transition-colors disabled:bg-[#dde1e7] disabled:text-[#858585]"
+                className="w-full flex items-center justify-center gap-2 text-white font-black rounded transition-colors"
                 style={{
                   padding: '9px 0',
                   fontSize: 10,
-                  backgroundColor: bundleItems.length === 0 || downloading ? undefined : '#1E365E',
+                  backgroundColor: bundleItems.length === 0 || downloading ? '#dde1e7' : '#1E365E',
+                  color: bundleItems.length === 0 || downloading ? '#858585' : 'white',
                 }}
               >
                 {downloading ? (
@@ -628,24 +767,30 @@ export default function CombinedPage({
         )}
       </div>
 
-      {/* ── RIGHT: Preview ─────────────────────────────────────────────────────── */}
+      {/* ── RIGHT: Document preview / Bundle index ─────────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-[#dde1e7] bg-white flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <Eye className="text-[#1E365E]" style={{ width: 13, height: 13 }} />
-            <span className="font-black text-[#252627] uppercase tracking-wide" style={{ fontSize: 10 }}>
-              Bundle Preview
-            </span>
-          </div>
-          {activeBundle && (
-            <span className="text-[#858585]" style={{ fontSize: 10 }}>
-              {bundleItems.length} doc{bundleItems.length !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <BundlePreview bundle={activeBundle} items={bundleItems} />
-        </div>
+        {selectedItem ? (
+          <DocumentPreview item={selectedItem} onClose={() => setSelectedItemId(null)} />
+        ) : (
+          <>
+            <div className="px-4 py-2.5 border-b border-[#dde1e7] bg-white flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <Eye className="text-[#1E365E]" style={{ width: 13, height: 13 }} />
+                <span className="font-black text-[#252627] uppercase tracking-wide" style={{ fontSize: 10 }}>
+                  Bundle Preview
+                </span>
+              </div>
+              {activeBundle && (
+                <span className="text-[#858585]" style={{ fontSize: 10 }}>
+                  {bundleItems.length} doc{bundleItems.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <BundleIndexPreview bundle={activeBundle} items={bundleItems} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
