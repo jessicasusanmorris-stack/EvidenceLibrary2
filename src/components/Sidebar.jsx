@@ -1,5 +1,6 @@
 import { LayoutGrid, Camera, Library, Package, ClipboardList } from 'lucide-react';
 
+
 const NAV_ITEMS = [
   { id: 'overview', label: 'Matter Overview', icon: LayoutGrid },
   { id: 'capture', label: 'Capture', icon: Camera },
@@ -14,8 +15,8 @@ export default function Sidebar({ activePage, onNavigate, matter, user }) {
       {/* Logo */}
       <div className="px-4 py-5 border-b border-white/10">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-9 h-9 bg-[#f69139] rounded-lg flex items-center justify-center flex-shrink-0">
-            <Library className="w-4.5 h-4.5 text-white" style={{ width: 18, height: 18 }} />
+          <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0">
+            <img src="/logo.png" alt="LEAP" className="w-full h-full object-cover" />
           </div>
           <div>
             <div className="text-white font-black text-xs uppercase tracking-wide leading-tight">Evidence Library</div>
