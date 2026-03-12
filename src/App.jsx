@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback } from 'react';
-import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import CombinedPage from './pages/CombinedPage';
 import {
@@ -15,7 +14,6 @@ const MATTER = { name: 'Smith & Smith', number: '7729' };
 const USER = { name: 'Sarah Jenkins', role: 'Principal Solicitor' };
 
 export default function App() {
-  const [activePage, setActivePage] = useState('library');
   const [evidenceItems, setEvidenceItems] = useState([]);
   const [bundles, setBundles] = useState([]);
   const [activeBundleId, setActiveBundleId] = useState(null);
@@ -151,42 +149,26 @@ export default function App() {
   }, []);
 
   // ── Render ───────────────────────────────────────────────────────────────────
-  const renderPage = () => {
-    if (activePage === 'library' || activePage === 'bundle-builder') {
-      return (
-        <CombinedPage
-          evidenceItems={evidenceItems}
-          bundles={bundles}
-          activeBundleId={activeBundleId}
-          onSelectBundle={handleSelectBundle}
-          onCreateBundle={handleCreateBundle}
-          onToggleItem={handleToggleItem}
-          onToggleFavourite={handleToggleFavourite}
-          onUpdateBundleName={handleUpdateBundleName}
-          onUpdateSettings={handleUpdateSettings}
-          onUpdateAuthorisedBy={handleUpdateAuthorisedBy}
-          onDeleteBundle={handleDeleteBundle}
-          matter={MATTER}
-        />
-      );
-    }
-    return (
-      <div className="flex-1 flex items-center justify-center text-[#858585] text-sm">
-        <div className="text-center">
-          <div className="text-4xl mb-3">🚧</div>
-          <div className="font-semibold">Coming Soon</div>
-          <div className="text-xs mt-1">This section is under development</div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="flex h-screen overflow-hidden bg-[#f4f6f9]">
-      <Sidebar activePage={activePage} onNavigate={setActivePage} matter={MATTER} user={USER} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header matter={MATTER} user={USER} onUpload={handleUpload} />
-        <div className="flex-1 overflow-hidden flex">{renderPage()}</div>
+        <div className="flex-1 overflow-hidden flex">
+          <CombinedPage
+            evidenceItems={evidenceItems}
+            bundles={bundles}
+            activeBundleId={activeBundleId}
+            onSelectBundle={handleSelectBundle}
+            onCreateBundle={handleCreateBundle}
+            onToggleItem={handleToggleItem}
+            onToggleFavourite={handleToggleFavourite}
+            onUpdateBundleName={handleUpdateBundleName}
+            onUpdateSettings={handleUpdateSettings}
+            onUpdateAuthorisedBy={handleUpdateAuthorisedBy}
+            onDeleteBundle={handleDeleteBundle}
+            matter={MATTER}
+          />
+        </div>
       </div>
     </div>
   );
